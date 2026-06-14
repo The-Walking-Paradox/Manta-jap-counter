@@ -531,12 +531,15 @@ function renderSetup(){
       </div>
     </div>
 
-    <!-- RECORDING INFO -->
+    <!-- HOW TO TEST + RECORD -->
     <div style="background:${gC(P,0.06)};border:1px solid ${gC(P,0.18)};border-radius:12px;padding:14px">
-      <div style="color:${P};font-size:13px;font-weight:700;margin-bottom:6px">🎬 Recording ${sAudioSrc?'(with audio!)':''}</div>
-      ${recSupported
-        ?`<div style="color:${gC(P,0.55)};font-size:12px;line-height:1.6">Tap <strong style="color:${P}">⏺ REC</strong> → select this tab${sAudioSrc?' → ✅ <strong>check "Share audio"</strong>':''} → tap red banner to stop and download.</div>`
-        :`<div style="color:${gC(P,0.55)};font-size:12px;line-height:1.6">Use phone's screen recorder.<br/>📱 <strong>iPhone:</strong> Control Centre → Screen Record<br/>📱 <strong>Android:</strong> Quick Settings → Screen Recorder</div>`}
+      <div style="color:${P};font-size:13px;font-weight:700;margin-bottom:8px">▶️ How to Test & Save Video</div>
+      <div style="color:${gC(P,0.6)};font-size:12px;line-height:1.7">
+        <strong style="color:${P}">1. Test / Preview:</strong> tap the big button below — the live counter IS your preview. Tap ⚙ to come back & adjust anytime.<br/><br/>
+        <strong style="color:${P}">2. Save as video:</strong><br/>
+        📱 <strong>Phone (best, gives MP4):</strong> start your phone's screen recorder FIRST, then tap ⏺ REC. Saves MP4 to Photos/Gallery.<br/>
+        ${recSupported?`💻 <strong>Desktop:</strong> tap ⏺ REC → pick this tab${sAudioSrc?' → ✅ check "Share audio"':''} → tap red banner to stop → downloads .webm (upload directly to TikTok/Reels/CapCut, they accept it).`:`💻 Desktop recording needs Chrome/Edge.`}
+      </div>
     </div>
 
     <!-- BUTTONS -->
