@@ -441,7 +441,7 @@ function renderSetup(){
       <div style="margin-top:9px">
         <div style="color:${PM};font-size:10px;letter-spacing:3px;margin-bottom:7px">${L.presets}</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
-          ${PRESETS.map(p=>`<button class="preset-btn" onclick="setPreset(${JSON.stringify(p.mantra)})" style="color:${sMantra===p.mantra?P:gC(P,0.45)};border:1px solid ${sMantra===p.mantra?gC(P,0.55):gC(P,0.15)};background:${sMantra===p.mantra?gC(P,0.18):'transparent'}">${p.label}</button>`).join('')}
+          ${PRESETS.map((p,pi)=>`<button class="preset-btn" onclick="setPresetByIndex(${pi})" style="color:${sMantra===p.mantra?P:gC(P,0.45)};border:1px solid ${sMantra===p.mantra?gC(P,0.55):gC(P,0.15)};background:${sMantra===p.mantra?gC(P,0.18):'transparent'}">${p.label}</button>`).join('')}
         </div>
       </div>
     </div>
@@ -580,7 +580,8 @@ function setTextMode(m){sTextMode=m;
 function setTextFx(f){sTextFx=f;renderSetup();}
 function setFontSize(s){sFontSize=s;renderSetup();}
 function setCount(n){sCount=n;sCustom='';renderSetup();}
-function setPreset(m){sMantra=m;el('inp-mantra').value=m;renderSetup();}
+function setPreset(m){sMantra=m;const ta=el('inp-mantra');if(ta)ta.value=m;renderSetup();}
+function setPresetByIndex(i){const p=PRESETS[i];if(!p)return;sMantra=p.mantra;const ta=el('inp-mantra');if(ta)ta.value=p.mantra;renderSetup();}
 function updateGoBtn(){sMantra=el('inp-mantra').value;renderSetup();}
 async function addImages(inp){
   const files=Array.from(inp.files);
