@@ -2037,7 +2037,14 @@ let sTextMode="word",sFontSize="lg",sShowCounter=true,sTextFx="slam",sPhotoFx="z
 // ── Glow / lighting ──
 let sRays=true, sRayInt=0.55, sAura=true, sGlowStr=0.7, sSparkle=true, sPulse=true, sVignette=true;
 let sBackdrop="both";   // none | outline | shadow | both — keeps text readable on bright images
+let sRingStyle="mala";  // mala (108 beads, jaapdaily-style) | ring (thick arc)
+let sNumStyle="elegant";// elegant serif | bold sans
+let sMalaSize=0.86;     // ring diameter as fraction of frame width
+let sShowOmTop=false;   // in mala mode, show the Om at the very top
 let sAudioSrc=null,sAudioName="",sAudioDuration=0;
+// ── Video background (animated deity scene) ──
+let sVideoSrc=null, sVideoName="", sVideoDur=0, videoEl=null, videoReady=false;
+let sVideoFit="cover", sVideoDim=0.0;   // dim = extra darkening over the video
 const imageObjs=[];
 let logoObj=null;
 
@@ -2446,11 +2453,13 @@ function play(){
     const a=el('bhajan-audio');
     a.play().catch(()=>{});
   }
+  if(videoEl&&sVideoSrc)videoEl.play().catch(()=>{});
   loop();updatePCPlay();
 }
 function pause(){
   playing=false;pausedAt=totalElapsed;
   if(sAudioSrc)el('bhajan-audio').pause();
+  if(videoEl&&sVideoSrc)videoEl.pause();
   if(rafId)cancelAnimationFrame(rafId);
   updatePCPlay();
 }
@@ -2482,6 +2491,61 @@ function loop(){
 }
 
 // ═══════════ drawFrame(t): fully deterministic ═══════════
+// ═══════════ VIDEO BACKGROUND ═══════════
+function handleVideoFile(inp){
+  const f=inp.files[0];if(!f)return;
+  if(sVideoSrc)URL.revokeObjectURL(sVideoSrc);
+  sVideoSrc=URL.createObjectURL(f);
+  sVideoName=f.name;videoReady=false;
+  if(!videoEl){
+    videoEl=document.createElement('video');
+    videoEl.muted=true;videoEl.loop=true;
+    videoEl.playsInline=true;
+    videoEl.setAttribute('playsinline','');
+    videoEl.setAttribute('webkit-playsinline','');
+    videoEl.preload='auto';
+    videoEl.style.display='none';
+    document.body.appendChild(videoEl);
+  }
+  videoEl.src=sVideoSrc;
+  videoEl.addEventListener('loadedmetadata',function once(){
+    sVideoDur=videoEl.duration||0;
+    videoReady=true;
+    videoEl.play().catch(()=>{});
+    renderSetup();
+  },{once:true});
+  renderSetup();
+}
+function clearVideo(){
+  if(sVideoSrc)URL.revokeObjectURL(sVideoSrc);
+  sVideoSrc=null;sVideoName="";sVideoDur=0;videoReady=false;
+  if(videoEl){videoEl.pause();videoEl.removeAttribute('src');videoEl.load();}
+  renderSetup();
+}
+// draw the video frame, cover-fitted (with optional gentle push-in)
+function drawVideoBg(t){
+  if(!videoEl||!videoReady||videoEl.readyState<2)return false;
+  const vw=videoEl.videoWidth,vh=videoEl.videoHeight;
+  if(!vw||!vh)return false;
+  const ir=vw/vh,cr=W/H;
+  let dw,dh;
+  if(sVideoFit==='contain'){
+    if(ir>cr){dw=W;dh=W/ir;}else{dh=H;dw=H*ir;}
+  } else {
+    if(ir>cr){dh=H;dw=H*ir;}else{dw=W;dh=W/ir;}
+  }
+  // optional slow push-in reuses the photo-motion setting
+  let sc=1;
+  if(sPhotoFx==='zoomin')sc=1+0.06*((t%20)/20);
+  else if(sPhotoFx==='zoomout')sc=1.06-0.06*((t%20)/20);
+  dw*=sc;dh*=sc;
+  ctx.save();
+  ctx.drawImage(videoEl,(W-dw)/2,(H-dh)/2,dw,dh);
+  if(sVideoDim>0){ctx.fillStyle=`rgba(0,0,0,${sVideoDim})`;ctx.fillRect(0,0,W,H);}
+  ctx.restore();
+  return true;
+}
+
 function drawFrame(t){
   if(!ctx)return;
   ctx.setTransform(1,0,0,1,0,0);       // guarantee a clean transform every frame
@@ -2499,8 +2563,10 @@ function drawFrame(t){
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle="#060300";ctx.fillRect(0,0,W,H);
 
+  // Background: animated video takes priority over stills
+  const usedVideo = sVideoSrc ? drawVideoBg(t) : false;
   // Deity image + Ken Burns
-  if(imageObjs.length>0){
+  if(!usedVideo && imageObjs.length>0){
     const idx=imageObjs.length>1?Math.floor(t/sImgInt)%imageObjs.length:0;
     const img=imageObjs[idx];
     if(img){
@@ -2525,7 +2591,7 @@ function drawFrame(t){
 
   // gradient
   const grad=ctx.createLinearGradient(0,0,0,H);
-  if(imageObjs.length>0){
+  if(usedVideo||imageObjs.length>0){
     grad.addColorStop(0,"rgba(6,3,0,0.05)");grad.addColorStop(0.4,"rgba(6,3,0,0.08)");
     grad.addColorStop(0.60,"rgba(6,3,0,0.72)");grad.addColorStop(1,"rgba(6,3,0,0.97)");
   }else{grad.addColorStop(0,"rgba(10,5,0,0.4)");grad.addColorStop(1,"rgba(6,3,0,0.6)");}
@@ -2552,13 +2618,24 @@ function drawFrame(t){
   if(sImages.length>1)drawImgDots(Math.floor(t/sImgInt)%sImages.length,P);
 
   if(sShowCounter){
-    const ringCY=H*0.62;
-    drawRing(W/2,ringCY,curN,total,inJap,P,S,t);
-    drawCounterNumber(W/2,ringCY,curN,total,inJap,P,t);
-    drawMantra(W/2,H*0.38,t,inJap,curN,words,P,S);
-    if(malas>0)drawMala(W/2,ringCY+310,malas,S);
-    drawOm(W/2,H*0.26,t,P);
-    if(sDeity)drawDeity(W/2,H*0.26+90,P);
+    if(sRingStyle==='mala'){
+      // Big delicate mala; mantra sits INSIDE the upper part of the ring
+      const ringCY=H*0.63;
+      drawRing(W/2,ringCY,curN,total,inJap,P,S,t);
+      drawCounterNumber(W/2,ringCY,curN,total,inJap,P,t);
+      drawMantra(W/2,ringCY-W*sMalaSize/2*0.62,t,inJap,curN,words,P,S);
+      if(malas>0)drawMala(W/2,ringCY+W*sMalaSize/2+70,malas,S);
+      if(sDeity)drawDeity(W/2,H*0.13,P);
+      if(sShowOmTop!==false)drawOm(W/2,H*0.075,t,P);
+    } else {
+      const ringCY=H*0.62;
+      drawRing(W/2,ringCY,curN,total,inJap,P,S,t);
+      drawCounterNumber(W/2,ringCY,curN,total,inJap,P,t);
+      drawMantra(W/2,H*0.38,t,inJap,curN,words,P,S);
+      if(malas>0)drawMala(W/2,ringCY+310,malas,S);
+      drawOm(W/2,H*0.26,t,P);
+      if(sDeity)drawDeity(W/2,H*0.26+90,P);
+    }
   } else {
     drawMantra(W/2,H*0.55,t,inJap,curN,words,P,S);
     drawOm(W/2,H*0.38,t,P);
@@ -2831,14 +2908,15 @@ function drawMantra(cx,cy,t,inJap,curN,words,P,S){
     const w=words[wi]||'';
     const want=w.length>7?f.mantra*1.1:w.length>4?f.mantra*1.35:f.mantra*1.65;
     const tr=fxTransform(sTextFx,k,t);
+    const wt=(sNumStyle==='elegant')?700:900;
     // shrink to fit BEFORE the entrance scale so it can never run off-screen
-    const sz=fitFont(w,900,want,MAXW/Math.max(0.35,tr.scale));
+    const sz=fitFont(w,wt,want,MAXW/Math.max(0.35,tr.scale));
     ctx.globalAlpha=tr.alpha;
     if(tr.blur>0.3)ctx.filter=`blur(${tr.blur}px)`;
     ctx.translate(cx,cy+tr.dy);ctx.scale(tr.scale,tr.scale);
-    ctx.font=`900 ${sz}px 'Noto Sans Devanagari',serif`;
+    ctx.font=`${wt} ${sz}px 'Noto Sans Devanagari',serif`;
     ctx.fillStyle=P;
-    cText(w,0,0,{glow:70*sGlowStr+20,glowColor:P,core:0.30});
+    cText(w,0,0,{glow:(sNumStyle==='elegant'?26:70)*sGlowStr+14,glowColor:P,core:sNumStyle==='elegant'?0.12:0.30});
   }
   else if(words.length>0){ // build
     const wordDur=1/(words.length+0.5);
@@ -2889,7 +2967,60 @@ function wrapText(text,x,y,maxW,lineH,glowColor){
   lines.forEach((l,i)=>cText(l.trim(),x,startY+i*lineH,{glow:30*sGlowStr+14,glowColor:glowColor,core:0.22}));
 }
 
+// ── MALA: a large delicate ring of individual beads (jaapdaily-style) ──
+function drawMala108(cx,cy,curN,total,inJap,P,S,t){
+  const R=W*sMalaSize/2;
+  cy+=Math.sin(t*1.2)*4;                       // barely-there float
+  const pop=sPulse?(1+0.05*Math.pow(1-clamp(inJap/0.3,0,1),2)):1;
+
+  // faint guide circle
+  ctx.save();
+  ctx.strokeStyle=gC(P,0.10);
+  ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.stroke();
+  ctx.restore();
+
+  // bead count: show every bead up to 108, else sample
+  const shown=Math.min(total,108);
+  const step=total/shown;
+  const beadR=clamp(R*2*Math.PI/shown*0.30,3.5,11);
+
+  for(let i=0;i<shown;i++){
+    const di=Math.floor(i*step);
+    const a=(di/total)*Math.PI*2-Math.PI/2;
+    const bx=cx+R*Math.cos(a), by=cy+R*Math.sin(a);
+    const lit=di<=curN;
+    const isHead=di===curN;
+    ctx.save();
+    if(lit){
+      // glowing gold bead
+      const g=ctx.createRadialGradient(bx,by,0,bx,by,beadR*3.2);
+      g.addColorStop(0,gC(P,0.55));
+      g.addColorStop(0.35,gC(P,0.18));
+      g.addColorStop(1,gC(P,0));
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle=g;
+      ctx.beginPath();ctx.arc(bx,by,beadR*3.2,0,Math.PI*2);ctx.fill();
+      ctx.globalCompositeOperation='source-over';
+      ctx.fillStyle=P;
+      ctx.shadowColor=P;ctx.shadowBlur=10*sGlowStr+4;
+      ctx.beginPath();ctx.arc(bx,by,beadR*(isHead?pop*1.25:1),0,Math.PI*2);ctx.fill();
+      // tiny highlight
+      ctx.shadowBlur=0;ctx.globalAlpha=0.55;ctx.fillStyle='#fff';
+      ctx.beginPath();ctx.arc(bx-beadR*0.3,by-beadR*0.3,beadR*0.34,0,Math.PI*2);ctx.fill();
+    } else {
+      // translucent pearl bead
+      ctx.fillStyle='rgba(255,255,255,0.30)';
+      ctx.beginPath();ctx.arc(bx,by,beadR*0.82,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=0.30;ctx.fillStyle='rgba(255,255,255,0.6)';
+      ctx.beginPath();ctx.arc(bx-beadR*0.22,by-beadR*0.22,beadR*0.28,0,Math.PI*2);ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
 function drawRing(cx,cy,curN,total,inJap,P,S,t){
+  if(sRingStyle==='mala'){drawMala108(cx,cy,curN,total,inJap,P,S,t);return;}
   const R=200;
   cy+=Math.sin(t*1.8)*8;
   const pop=sPulse?(1+0.10*Math.pow(1-clamp(inJap/0.25,0,1),2)):1;
@@ -2942,8 +3073,25 @@ function drawRing(cx,cy,curN,total,inJap,P,S,t){
 }
 
 function drawCounterNumber(cx,cy,curN,total,inJap,P,t){
-  cy+=Math.sin(t*1.8)*8;
   const f=fsz();
+  if(sNumStyle==='elegant'){
+    // Thin white serif — the jaapdaily look
+    cy+=Math.sin(t*1.2)*4;
+    const pop=sPulse?(inJap<0.18?1+(0.06*(1-inJap/0.18)):1):1;
+    const sz=f.counter*1.28*pop;
+    ctx.save();
+    ctx.textBaseline='middle';
+    ctx.font=`400 ${sz}px Georgia,'Times New Roman','Noto Sans Devanagari',serif`;
+    ctx.fillStyle='#ffffff';
+    cText(String(curN),cx,cy-14,{glow:26*sGlowStr+8,glowColor:'#ffffff'});
+    // "of 108" in small italic serif
+    ctx.font=`italic 400 ${Math.max(26,sz*0.20)}px Georgia,'Times New Roman',serif`;
+    ctx.fillStyle='rgba(255,255,255,0.62)';
+    cText('of '+total,cx,cy+sz*0.46,{glow:8,glowColor:'#ffffff'});
+    ctx.restore();
+    return;
+  }
+  cy+=Math.sin(t*1.8)*8;
   const pop=inJap<0.15?1+(0.28*(1-inJap/0.15)):1;
   ctx.save();
   ctx.textBaseline='middle';
@@ -3083,8 +3231,21 @@ async function renderMp4(){
       error:e=>{console.log('enc err',e);}
     });
     encoder.configure({codec:'avc1.640028',width:W,height:H,bitrate:8000000,framerate:FPS});
+    // If a video background is loaded, pause it and seek frame-by-frame so the
+    // exported MP4 is deterministic instead of whatever happened to be playing.
+    const useVid = !!(sVideoSrc&&videoEl&&videoReady&&sVideoDur>0);
+    if(useVid){videoEl.pause();}
+    const seekTo=(sec)=>new Promise(res=>{
+      let done=false;
+      const ok=()=>{if(done)return;done=true;videoEl.removeEventListener('seeked',ok);res();};
+      videoEl.addEventListener('seeked',ok);
+      try{videoEl.currentTime=sec;}catch(e){ok();}
+      setTimeout(ok,120);   // never hang on a stubborn seek
+    });
+
     for(let i=0;i<totalFrames;i++){
       const t=i/FPS;
+      if(useVid)await seekTo(t%sVideoDur);
       drawFrame(t);
       const frame=new VideoFrame(el('cv'),{timestamp:Math.round(i*1e6/FPS),duration:Math.round(1e6/FPS)});
       encoder.encode(frame,{keyFrame:i%30===0});
@@ -3096,6 +3257,7 @@ async function renderMp4(){
         await new Promise(r=>setTimeout(r,0));
       }
     }
+    if(useVid){videoEl.currentTime=0;videoEl.play().catch(()=>{});}
     el('exp-pct').textContent='Finalizing...';
     await encoder.flush();
     muxer.finalize();
@@ -3204,6 +3366,39 @@ function renderSetup(){
     <div>
       <label class="field-label" style="color:${PL}">${L.fontSize}</label>
       <div style="display:flex;gap:8px">${FONT_SIZES.map(f=>`<button class="sz-btn" onclick="setFontSize('${f.id}')" style="color:${sFontSize===f.id?P:gC(P,0.4)};border:1px solid ${sFontSize===f.id?gC(P,0.55):gC(P,0.15)};background:${sFontSize===f.id?gC(P,0.2):'transparent'};font-size:${f.id==='sm'?13:f.id==='md'?16:f.id==='lg'?19:23}px">${f.label}</button>`).join('')}</div>
+    </div>
+
+    <!-- COUNTER STYLE -->
+    <div style="border-top:1px solid ${gC(P,0.1)};padding-top:16px">
+      <label class="field-label" style="color:${PL}">📿 Counter Style</label>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div onclick="applyElegant()" style="flex:1;padding:14px 10px;border-radius:12px;cursor:pointer;text-align:center;background:${sRingStyle==='mala'?gC(P,0.16):'transparent'};border:1px solid ${sRingStyle==='mala'?gC(P,0.55):gC(P,0.15)}">
+          <div style="font-size:20px;margin-bottom:4px">📿</div>
+          <div style="color:${sRingStyle==='mala'?P:gC(P,0.55)};font-size:12px;font-weight:700">Elegant Mala</div>
+          <div style="color:${gC(P,0.3)};font-size:10px;margin-top:2px">108 beads · thin serif</div>
+        </div>
+        <div onclick="applyBold()" style="flex:1;padding:14px 10px;border-radius:12px;cursor:pointer;text-align:center;background:${sRingStyle==='ring'?gC(P,0.16):'transparent'};border:1px solid ${sRingStyle==='ring'?gC(P,0.55):gC(P,0.15)}">
+          <div style="font-size:20px;margin-bottom:4px">⭕</div>
+          <div style="color:${sRingStyle==='ring'?P:gC(P,0.55)};font-size:12px;font-weight:700">Bold Ring</div>
+          <div style="color:${gC(P,0.3)};font-size:10px;margin-top:2px">thick arc · heavy type</div>
+        </div>
+      </div>
+      ${sRingStyle==='mala'?`
+      <div style="margin-bottom:10px">
+        <div style="color:${gC(P,0.4)};font-size:10px;letter-spacing:2px;margin-bottom:5px">MALA SIZE — <span id="malaLbl" style="color:${P}">${Math.round(sMalaSize*100)}%</span></div>
+        <input type="range" min="55" max="98" value="${Math.round(sMalaSize*100)}" oninput="sMalaSize=+this.value/100;el('malaLbl').textContent=this.value+'%'" style="accent-color:${P}"/>
+      </div>
+      <div class="option-row" style="padding:8px 0">
+        <div><div style="color:${P};font-size:12px;font-weight:700">ॐ at top</div><div style="color:${gC(P,0.3)};font-size:10px;margin-top:2px">Show the Om above the deity name</div></div>
+        <div class="toggle-track" style="background:${sShowOmTop?gC(P,0.3):gC(P,0.08)};border:1px solid ${sShowOmTop?gC(P,0.6):gC(P,0.2)}" onclick="sShowOmTop=!sShowOmTop;renderSetup()"><div class="toggle-thumb" style="left:${sShowOmTop?23:3}px;background:${sShowOmTop?P:'rgba(255,255,255,0.2)'}"></div></div>
+      </div>`:''}
+      <div>
+        <div style="color:${gC(P,0.4)};font-size:10px;letter-spacing:2px;margin-bottom:6px">NUMBER TYPE</div>
+        <div style="display:flex;gap:6px">
+          <button onclick="sNumStyle='elegant';renderSetup()" style="flex:1;padding:10px;border-radius:9px;font-size:12px;cursor:pointer;font-family:Georgia,serif;background:${sNumStyle==='elegant'?gC(P,0.18):'transparent'};color:${sNumStyle==='elegant'?P:gC(P,0.45)};border:1px solid ${sNumStyle==='elegant'?gC(P,0.55):gC(P,0.15)}">Elegant serif</button>
+          <button onclick="sNumStyle='bold';renderSetup()" style="flex:1;padding:10px;border-radius:9px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;background:${sNumStyle==='bold'?gC(P,0.18):'transparent'};color:${sNumStyle==='bold'?P:gC(P,0.45)};border:1px solid ${sNumStyle==='bold'?gC(P,0.55):gC(P,0.15)}">Bold sans</button>
+        </div>
+      </div>
     </div>
 
     <!-- GLOW & LIGHTING -->
@@ -3332,8 +3527,38 @@ function renderSetup(){
       <input type="file" id="file-audio" accept="audio/*" style="display:none" onchange="handleAudioFile(this)"/>
     </div>
 
+    <!-- ANIMATED VIDEO BACKGROUND -->
     <div>
-      <label class="field-label" style="color:${PL}">${L.images}</label>
+      <label class="field-label" style="color:${PL}">🎬 Animated Background <span style="background:rgba(74,222,128,.14);color:#4ade80;padding:2px 8px;border-radius:10px;margin-left:6px;font-size:9px;letter-spacing:1px">NEW</span></label>
+      ${sVideoSrc
+        ?`<div style="display:flex;align-items:center;gap:10px;padding:12px;background:${gC(P,0.08)};border:1px solid ${gC(P,0.3)};border-radius:12px;margin-bottom:10px">
+            <div style="font-size:22px">🎬</div>
+            <div style="flex:1;overflow:hidden"><div style="color:${P};font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sVideoName}</div><div style="color:${videoReady?'#4ade80':gC(P,0.5)};font-size:11px;margin-top:2px">${videoReady?`✓ ${sVideoDur.toFixed(1)}s loop — playing behind the counter`:'loading...'}</div></div>
+            <button onclick="clearVideo()" style="background:rgba(255,100,100,0.15);color:#FF6B6B;border:1px solid rgba(255,100,100,0.4);border-radius:20px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">Remove</button>
+          </div>
+          <div style="margin-bottom:10px">
+            <div style="color:${gC(P,0.4)};font-size:10px;letter-spacing:2px;margin-bottom:5px">DARKEN VIDEO — <span id="vdimLbl" style="color:${P}">${Math.round(sVideoDim*100)}%</span></div>
+            <input type="range" min="0" max="70" value="${Math.round(sVideoDim*100)}" oninput="sVideoDim=+this.value/100;el('vdimLbl').textContent=this.value+'%'" style="accent-color:${P}"/>
+            <div style="color:${gC(P,0.3)};font-size:10px;margin-top:3px">Push this up if the counter is hard to read over a busy scene</div>
+          </div>`
+        :`<div class="upload-zone" style="border:1px dashed ${gC(P,0.28)};background:${gC(P,0.02)};margin-bottom:10px" onclick="el('file-vid').click()">
+            <div style="font-size:24px;margin-bottom:5px">🎬</div>
+            <div style="color:${gC(P,0.5)};font-size:13px">Upload an animated deity scene</div>
+            <div style="color:${gC(P,0.25)};font-size:11px;margin-top:3px">MP4 · MOV · WEBM — a short looping clip</div>
+          </div>`}
+      <input type="file" id="file-vid" accept="video/*" style="display:none" onchange="handleVideoFile(this)"/>
+      <div style="background:${gC(P,0.05)};border:1px solid ${gC(P,0.14)};border-radius:11px;padding:12px">
+        <div style="color:${P};font-size:12px;font-weight:700;margin-bottom:5px">✨ How to get moving clouds & lightning</div>
+        <div style="color:${gC(P,0.5)};font-size:11px;line-height:1.75">
+          Take your still deity image into an AI image-to-video tool — <strong style="color:${gC(P,0.75)}">Kling, Runway, Hailuo</strong> or <strong style="color:${gC(P,0.75)}">Pika</strong> — and prompt something like:<br/>
+          <span style="color:${gC(P,0.72)};font-style:italic">"slow drifting storm clouds, lightning flashes in the background, glowing embers rising, gentle camera push in, deity stays still"</span><br/>
+          Export the 5–10s clip and upload it here. That's exactly how those pages do it.
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <label class="field-label" style="color:${PL}">${L.images}${sVideoSrc?` <span style="color:${gC(P,0.35)};font-size:9px;letter-spacing:0;text-transform:none">— ignored while a video is loaded</span>`:''}</label>
       <div class="upload-zone" style="border:1px dashed ${gC(P,0.28)};background:${gC(P,0.02)};margin-bottom:${sImages.length?12:0}px" onclick="el('file-imgs').click()"><div style="font-size:24px;margin-bottom:5px">🖼️</div><div style="color:${gC(P,0.5)};font-size:13px">${L.imageHint}</div><div style="color:${gC(P,0.25)};font-size:11px;margin-top:3px">JPG · PNG · WEBP</div></div>
       <input type="file" id="file-imgs" accept="image/*" multiple style="display:none" onchange="addImages(this)"/>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:${sImages.length?8:0}px">
@@ -3413,6 +3638,20 @@ function syncGoButtons(){
 }
 
 function setLang(l){sLang=l;renderSetup();}
+// One-tap looks
+function applyElegant(){
+  sRingStyle='mala';sNumStyle='elegant';
+  sTextFx='fade';sGlowStr=0.45;
+  sRays=false;sSparkle=false;sAura=true;sVignette=true;sPulse=true;
+  sPhotoFx='zoomin';sBackdrop='shadow';
+  renderSetup();
+}
+function applyBold(){
+  sRingStyle='ring';sNumStyle='bold';
+  sGlowStr=0.7;sRays=true;sSparkle=true;sAura=true;sVignette=true;
+  sBackdrop='both';
+  renderSetup();
+}
 function setTheme(id){sThemeId=id;renderSetup();}
 function setCustomClr(v){sCustomClr=v;renderSetup();}
 function setTextMode(m){sTextMode=m;renderSetup();}
